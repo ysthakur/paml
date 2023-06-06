@@ -2,7 +2,8 @@
 
 Possibly A Markup Language. Probably not.
 
-This is a rip-off of JSON (and YAML).
+This is a rip-off of JSON and YAML. The implementation is in the [rust](/rust) folder.
+Large chunks of it were copied from the serde documentation.
 
 No idea how to formally specify a language so here's some examples:
 

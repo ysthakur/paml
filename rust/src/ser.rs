@@ -133,15 +133,15 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_unit_struct(self, name: &'static str) -> Result<()> {
         use ser::SerializeStruct;
-        let mut s = self.serialize_struct(name, 0)?;
+        let s = self.serialize_struct(name, 0)?;
         s.end()
     }
 
     fn serialize_unit_variant(
         self,
         name: &'static str,
-        variant_index: u32,
-        variant: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
     ) -> Result<()> {
         serialize_type(self, name)?;
         self.serialize_unit()
@@ -152,7 +152,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         T: Serialize,
     {
         use ser::SerializeTupleStruct;
-        serialize_type(self, name);
+        serialize_type(self, name)?;
         let mut s = self.serialize_struct(name, 1)?;
         s.serialize_field(value)?;
         s.end()
@@ -175,7 +175,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         tv.end()
     }
 
-    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
+    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
         self.output += "[";
         Ok(self)
     }
@@ -195,15 +195,15 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_tuple_variant(
         self,
-        name: &'static str,
-        variant_index: u32,
+        _name: &'static str,
+        _variant_index: u32,
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
         self.serialize_tuple_struct(variant, len)
     }
 
-    fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
+    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
         self.output += "{";
         Ok(self)
     }
@@ -215,8 +215,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_struct_variant(
         self,
-        name: &'static str,
-        variant_index: u32,
+        _name: &'static str,
+        _variant_index: u32,
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStructVariant> {
@@ -233,7 +233,7 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
     where
         T: Serialize,
     {
-        value.serialize(*self);
+        value.serialize(&mut **self)?;
         self.output += ",";
         Ok(())
     }
@@ -301,7 +301,7 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
     where
         T: Serialize,
     {
-        key.serialize(*self)?;
+        key.serialize(&mut **self)?;
         self.output += " ";
         Ok(())
     }
@@ -310,7 +310,7 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
     where
         T: Serialize,
     {
-        value.serialize(*self);
+        value.serialize(&mut **self)?;
         self.output += ",";
         Ok(())
     }
