@@ -1,21 +1,27 @@
 use std::collections::HashMap;
 
-pub struct Tree {
-  pub kind: TreeKind,
-  pub span: Span
+/// The start and offset of a [Tree]
+pub struct Span {
+    pub start: usize,
+    pub end: usize
 }
 
-pub enum TreeKind {
-  Scalar(Scalar),
-  List(Vec<Tree>),
-  Map(HashMap<Tree, Tree>)
+pub enum TypeTag {
+    Int,
+    Str,
+    Custom(String)
 }
 
-pub enum Scalar {
-  Str(String),
-  Num(String),
-  Bool(bool)
+pub enum Tree {
+    Str(String),
+    Num(String),
+    Bool(bool),
+    List(Vec<TreeInfo>),
+    Map(HashMap<TreeInfo, TreeInfo>)
 }
 
-pub struct Span(usize, usize);
-
+pub struct TreeInfo {
+    pub tree: Tree,
+    pub tpe: TypeTag,
+    pub span: Span
+}
