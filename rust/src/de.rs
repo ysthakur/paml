@@ -126,67 +126,6 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    /// Parse a string without consuming it
-    fn peek_str(&mut self) -> Result<&'de str> {
-        match self.peek()? {
-            q @ ('"' | '\'') => {
-                // Normal quoted strings
-                // todo allow raw strings with r#""#
-                self.next()?;
-                let mut i = 1;
-                let mut chars = self.input.chars();
-                loop {
-                    match chars.next() {
-                        None => {
-                            return Err(Error::Message(format!(
-                                "Expected closing {}, input ended suddenly",
-                                q
-                            )))
-                        }
-                        Some('\\') => {
-                            chars.next().unwrap();
-                            i += 2;
-                        }
-                        Some(c) => {
-                            if c == q {
-                                break;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                    }
-                }
-                Ok(&self.input[..i])
-            }
-            '`' => {
-                // Strings that extend to the end of the line
-                self.next()?;
-                let str: String = self.input.chars().take_while(|&c| c != '\n').collect();
-                if str.is_empty() {
-                    Err(Error::Message("Expected a string, got nothing".to_string()))
-                } else {
-                    Ok(&self.input[..str.len()])
-                }
-            }
-            _ => {
-                // Bare strings (single words)
-                let word: String = self
-                    .input
-                    .chars()
-                    .take_while(|&c| !Self::ends_word(c))
-                    .collect();
-                if word.is_empty() {
-                    Err(Error::Message(
-                        "Expected a word, got whitespace".to_string(),
-                    ))
-                } else {
-                    println!("Word is {}", word);
-                    Ok(&self.input[..word.len()])
-                }
-            }
-        }
-    }
-
     fn parse_num(&mut self) -> Result<Option<String>> {
         // todo handle floats
         let num: String = self.input.chars().take_while(|c| c.is_digit(10)).collect();
@@ -215,8 +154,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         } else {
             let c = self.peek()?;
 
-            println!("Input is {}, c is {}", self.input, c);
-
             if self.parse_keyword("true")? {
                 visitor.visit_bool(true)
             } else if self.parse_keyword("false")? {
@@ -231,15 +168,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
                 visitor.visit_map(self)
             } else {
                 match self.parse_num()? {
-                    Some(num) => {
-                        println!("Parsed number {}, input is {}", num, self.input);
-                        visitor.visit_i32(num.parse().unwrap())
-                    }
-                    None => {
-                        let parsed = self.parse_str()?;
-                        println!("Parsed {}, input is now {}", parsed, self.input);
-                        visitor.visit_string(parsed)
-                    }
+                    Some(num) => visitor.visit_i32(num.parse().unwrap()),
+                    None => visitor.visit_string(self.parse_str()?),
                 }
             }
         }
@@ -247,8 +177,20 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char string
-        bytes byte_buf option unit unit_struct seq tuple map
+        bytes byte_buf option unit unit_struct seq map
         struct tuple_struct ignored_any
+    }
+
+    fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        let val = self.deserialize_seq(visitor)?;
+        if self.next()? != ']' {
+            Err(Error::Message("Expected ']'".to_string()))
+        } else {
+            Ok(val)
+        }
     }
 
     fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
@@ -285,7 +227,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         self.trim_ignored()?;
-        println!("In de_ident, input is {}", self.input);
         self.deserialize_str(visitor)
     }
 
@@ -305,10 +246,8 @@ impl<'de, 'a> SeqAccess<'de> for &'a mut Deserializer<'de> {
         T: de::DeserializeSeed<'de>,
     {
         self.trim_ignored()?;
-        println!("In next_element_seed, input is {}", self.input);
         if self.peek()? == ']' {
             self.next()?;
-            println!("Done parsing Seq");
             Ok(None)
         } else {
             seed.deserialize(&mut **self).map(Some)
@@ -434,15 +373,18 @@ mod test {
     }
 
     #[test]
+    fn test_tuple() {
+        let paml = "[0 1 2]";
+        assert_eq!((0, 1, 2), super::from_str(paml).unwrap());
+    }
+
+    #[test]
     fn test_enum() {
         let paml = "~UnitVariant null";
         assert_eq!(Enum::UnitVariant, super::from_str(paml).unwrap());
 
         let paml = "~NewTypeVariant true";
-        assert_eq!(
-            Enum::NewTypeVariant(true),
-            super::from_str(paml).unwrap()
-        );
+        assert_eq!(Enum::NewTypeVariant(true), super::from_str(paml).unwrap());
 
         let paml = r#"~TupleVariant ["foo" 45]"#;
         assert_eq!(
@@ -452,7 +394,10 @@ mod test {
 
         let paml = r#"~StructVariant { null null foo bar }"#;
         assert_eq!(
-            Enum::StructVariant { null: (), foo: "bar".to_string() },
+            Enum::StructVariant {
+                null: (),
+                foo: "bar".to_string()
+            },
             super::from_str(paml).unwrap()
         );
     }
