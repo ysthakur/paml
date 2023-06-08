@@ -3,6 +3,13 @@ use serde::{forward_to_deserialize_any, Deserialize};
 
 use crate::error::{Error, Result};
 
+enum StringKind {
+    /// A string that extends to the end of the line
+    ToEol,
+    Quote(String),
+    Bare,
+}
+
 pub struct Deserializer<'de> {
     // This string starts with the input data and characters are truncated off
     // the beginning as data is parsed.
@@ -11,7 +18,9 @@ pub struct Deserializer<'de> {
 
 impl<'de> Deserializer<'de> {
     pub fn from_str(input: &'de str) -> Self {
-        Deserializer { input }
+        Deserializer {
+            input
+        }
     }
 }
 
@@ -41,18 +50,30 @@ impl<'de> Deserializer<'de> {
         Ok(c)
     }
 
-    fn trim_whitespace(&mut self) -> Result<()> {
-        todo!()
+    fn trim_ignored(&mut self) -> Result<()> {
+        while !self.input.is_empty() {
+            let c = self.peek()?;
+            if c.is_whitespace() {
+                let ws: String = self
+                    .input
+                    .chars()
+                    .take_while(|c| c.is_whitespace())
+                    .collect();
+                self.input = &self.input[ws.len()..];
+            } else if c == '#' {
+            } else {
+                break;
+            }
+        }
+        Ok(())
     }
 
     fn parse_keyword(&mut self, keyword: &str) -> Result<bool> {
         if !self.input.starts_with(keyword) {
             Ok(false)
-        } else if self.input.len() == keyword.len() {
-            Ok(true) // EOF right afterwards
         } else {
-            let e = self.input.chars().nth(keyword.len() + 1).unwrap();
-            if e.is_whitespace() || SPECIAL_CHARS.contains(&e) {
+            let e = self.input.chars().nth(keyword.len() + 1);
+            if e.is_none() || e.unwrap().is_whitespace() || SPECIAL_CHARS.contains(&e.unwrap()) {
                 self.input = &self.input[keyword.len()..];
                 Ok(true)
             } else {
@@ -65,7 +86,7 @@ impl<'de> Deserializer<'de> {
         if self.input.starts_with("~") {
             let _ = self.next()?;
             let word = self.parse_str()?;
-            self.trim_whitespace()?;
+            self.trim_ignored()?;
             Ok(Some(word))
         } else {
             Ok(None)
@@ -117,6 +138,67 @@ impl<'de> Deserializer<'de> {
             }
         }
     }
+
+    /// Parse a string without consuming it
+    fn peek_str(&mut self) -> Result<&'de str> {
+        match self.peek()? {
+            q @ ('"' | '\'') => {
+                // Normal quoted strings
+                // todo allow raw strings with r#""#
+                self.next()?;
+                let mut i = 1;
+                let mut chars = self.input.chars();
+                loop {
+                    match chars.next() {
+                        None => {
+                            return Err(Error::Message(format!(
+                                "Expected closing {}, input ended suddenly",
+                                q
+                            )))
+                        }
+                        Some('\\') => {
+                            chars.next().unwrap();
+                            i += 2;
+                        }
+                        Some(c) => {
+                            if c == q {
+                                break;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                    }
+                }
+                Ok(&self.input[..i])
+            }
+            '`' => {
+                // Strings that extend to the end of the line
+                self.next()?;
+                let str: String = self.input.chars().take_while(|&c| c != '\n').collect();
+                if str.is_empty() {
+                    Err(Error::Message("Expected a string, got nothing".to_string()))
+                } else {
+                    Ok(&self.input[..str.len()])
+                }
+            }
+            _ => {
+                // Bare strings (single words)
+                let word: String = self
+                    .input
+                    .chars()
+                    .take_while(|c| !c.is_whitespace() && !SPECIAL_CHARS.contains(c))
+                    .collect();
+                if word.is_empty() {
+                    Err(Error::Message(
+                        "Expected a word, got whitespace".to_string(),
+                    ))
+                } else {
+                    println!("Word is {}", word);
+                    Ok(&self.input[..word.len()])
+                }
+            }
+        }
+    }
 }
 
 impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
@@ -126,32 +208,41 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        self.trim_whitespace()?;
+        self.trim_ignored()?;
         if self.input.is_empty() {
             Err(Error::Eof)
         } else {
-            let typ = self.parse_type()?;
+            // let typ = self.parse_type()?.unwrap_or("".to_string());
 
-            if self.parse_keyword("true")? {
+            let c = self.peek()?;
+            
+            println!("Input is {}, c is {}", self.input, c);
+
+            if c == '~' {
+                self.next()?;
+                let typ = self.peek_str()?;
+                println!("Type is [{}]", typ);
+                if typ == "::Some" {
+                    visitor.visit_some(self)
+                } else if typ == "::None" {
+                    visitor.visit_none()
+                } else if typ.starts_with("::") {
+                    visitor.visit_enum(self)
+                } else if c != '{' && c != '[' {
+                    visitor.visit_newtype_struct(self)
+                } else {
+                    visitor.visit_map(self)
+                }
+            } else if self.parse_keyword("true")? {
                 visitor.visit_bool(true)
             } else if self.parse_keyword("false")? {
                 visitor.visit_bool(false)
             } else if self.parse_keyword("null")? {
-                if let Some("None") = typ.as_deref() {
-                    visitor.visit_none()
-                } else {
-                    visitor.visit_unit()
-                }
-            } else if self.input.starts_with("[") {
-                match typ {
-                    Some(ref typ) if typ.starts_with("::") => visitor.visit_enum(self),
-                    _ => visitor.visit_seq(self),
-                }
-            } else if self.input.starts_with("{") {
-                match typ {
-                    Some(ref typ) if typ.starts_with("::") => visitor.visit_enum(self),
-                    _ => visitor.visit_map(self),
-                }
+                visitor.visit_unit()
+            } else if c == '[' {
+                visitor.visit_seq(self)
+            } else if c == '{' {
+                visitor.visit_map(self)
             } else {
                 visitor.visit_string(self.parse_str()?)
             }
@@ -159,9 +250,38 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     forward_to_deserialize_any! {
-        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct seq tuple map identifier
-        struct tuple_struct ignored_any enum
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char string
+        bytes byte_buf option unit unit_struct newtype_struct seq tuple map
+        struct tuple_struct ignored_any
+    }
+
+    fn deserialize_enum<V>(
+            self,
+            name: &'static str,
+            variants: &'static [&'static str],
+            visitor: V,
+        ) -> std::result::Result<V::Value, Self::Error>
+        where
+            V: Visitor<'de> {
+        self.trim_ignored()?;
+        println!("In de_enum, input is {}", self.input);
+        self.next()?;
+        visitor.visit_enum(self)
+    }
+
+    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.trim_ignored()?;
+        println!("In de_ident, input is {}", self.input);
+        self.deserialize_str(visitor)
+    }
+
+    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value>
+        where
+            V: Visitor<'de> {
+        visitor.visit_string(self.parse_str()?)
     }
 }
 
@@ -172,7 +292,7 @@ impl<'de, 'a> SeqAccess<'de> for &'a mut Deserializer<'de> {
     where
         T: de::DeserializeSeed<'de>,
     {
-        self.trim_whitespace()?;
+        self.trim_ignored()?;
         if self.peek()? == ']' {
             return Ok(None);
         } else {
@@ -188,7 +308,7 @@ impl<'de, 'a> MapAccess<'de> for &'a mut Deserializer<'de> {
     where
         K: de::DeserializeSeed<'de>,
     {
-        self.trim_whitespace()?;
+        self.trim_ignored()?;
         if self.peek()? == '}' {
             return Ok(None);
         } else {
@@ -200,7 +320,7 @@ impl<'de, 'a> MapAccess<'de> for &'a mut Deserializer<'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        self.trim_whitespace()?;
+        self.trim_ignored()?;
         if self.peek()? == '}' {
             return Err(Error::Message("No value given".to_string()));
         } else {
@@ -217,8 +337,9 @@ impl<'de, 'a> EnumAccess<'de> for &'a mut Deserializer<'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        let variant = seed.deserialize(&mut *self)?;
-        Ok((variant, self))
+        let val = seed.deserialize(&mut *self)?;
+        self.trim_ignored()?;
+        Ok((val, self))
     }
 }
 
@@ -226,6 +347,8 @@ impl<'de, 'a> VariantAccess<'de> for &'a mut Deserializer<'de> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<()> {
+        self.trim_ignored()?;
+        self.parse_keyword("null")?;
         Ok(())
     }
 
@@ -248,5 +371,46 @@ impl<'de, 'a> VariantAccess<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         de::Deserializer::deserialize_map(self, visitor)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use serde::Deserialize;
+
+    #[derive(Deserialize, PartialEq, Debug)]
+    enum TestEnum {
+        UnitVariant,
+        NewTypeVariant(bool),
+        TupleVariant(String, i32),
+        StructVariant { null: (), foo: String },
+    }
+
+    #[derive(Deserialize, PartialEq, Debug)]
+    struct Struct {
+        seq: Vec<i32>,
+    }
+
+    #[test]
+    fn test_literals() {
+        assert_eq!((), super::from_str("null").unwrap());
+        assert_eq!(true, super::from_str("true").unwrap());
+        assert_eq!(false, super::from_str("false").unwrap());
+        assert_eq!("123a", super::from_str::<String>("123a").unwrap());
+    }
+
+    #[test]
+    fn test_seq() {
+        let paml = "{ seq [0 1 2] }";
+        assert_eq!(
+            Struct { seq: vec![0, 1, 2] },
+            super::from_str(paml).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_enum() {
+        let paml = "~UnitVariant null";
+        assert_eq!(TestEnum::UnitVariant, super::from_str(paml).unwrap());
     }
 }
