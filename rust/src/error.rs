@@ -9,7 +9,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     Message(String),
     Eof,
-    TrailingCharacters(String)
+    TrailingCharacters(String),
+    ExpectedType
 }
 
 impl ser::Error for Error {
@@ -29,7 +30,8 @@ impl Display for Error {
         match self {
             Error::Message(msg) => formatter.write_str(msg),
             Error::Eof => formatter.write_str("unexpected end of input"),
-            Error::TrailingCharacters(end) => formatter.write_str(&format!("Found extra text at end of input: {}", end))
+            Error::TrailingCharacters(end) => formatter.write_str(&format!("Found extra text at end of input: {}", end)),
+            Error::ExpectedType => formatter.write_str("Expected type")
         }
     }
 }
