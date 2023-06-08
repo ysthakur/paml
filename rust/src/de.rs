@@ -101,7 +101,11 @@ impl<'de> Deserializer<'de> {
             }
             _ => {
                 // Bare strings (single words)
-                let word: String = self.input.chars().take_while(|c| !c.is_whitespace()).collect();
+                let word: String = self
+                    .input
+                    .chars()
+                    .take_while(|c| !c.is_whitespace())
+                    .collect();
                 if word.is_empty() {
                     Err(Error::Message(
                         "Expected a word, got whitespace".to_string(),
@@ -139,13 +143,15 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
                     visitor.visit_unit()
                 }
             } else if self.input.starts_with("[") {
-                if let Some("Some") = typ.as_deref() {
-                    visitor.visit_enum(self)
-                } else {
-                    visitor.visit_seq(self)
+                match typ {
+                    Some(ref typ) if typ.starts_with("::") => visitor.visit_enum(self),
+                    _ => visitor.visit_seq(self),
                 }
             } else if self.input.starts_with("{") {
-                visitor.visit_map(self)
+                match typ {
+                    Some(ref typ) if typ.starts_with("::") => visitor.visit_enum(self),
+                    _ => visitor.visit_map(self),
+                }
             } else {
                 visitor.visit_string(self.parse_str()?)
             }
@@ -155,19 +161,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
         bytes byte_buf option unit unit_struct newtype_struct seq tuple map identifier
-        struct tuple_struct ignored_any
-    }
-
-    fn deserialize_enum<V>(
-        self,
-        name: &'static str,
-        variants: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        let typ = self.parse_type()?;
+        struct tuple_struct ignored_any enum
     }
 }
 
@@ -223,7 +217,8 @@ impl<'de, 'a> EnumAccess<'de> for &'a mut Deserializer<'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        todo!()
+        let variant = seed.deserialize(&mut *self)?;
+        Ok((variant, self))
     }
 }
 
@@ -231,27 +226,27 @@ impl<'de, 'a> VariantAccess<'de> for &'a mut Deserializer<'de> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
     where
         T: de::DeserializeSeed<'de>,
     {
-        todo!()
+        seed.deserialize(self)
     }
 
-    fn tuple_variant<V>(self, len: usize, visitor: V) -> Result<V::Value>
+    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        de::Deserializer::deserialize_seq(self, visitor)
     }
 
-    fn struct_variant<V>(self, fields: &'static [&'static str], visitor: V) -> Result<V::Value>
+    fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        de::Deserializer::deserialize_map(self, visitor)
     }
 }
