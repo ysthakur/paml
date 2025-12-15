@@ -7,33 +7,35 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    Message(String),
-    Eof,
-    TrailingCharacters(String),
-    ExpectedType
+  Message(String),
+  Eof,
+  TrailingCharacters(String),
+  ExpectedType,
 }
 
 impl ser::Error for Error {
-    fn custom<T: Display>(msg: T) -> Self {
-        Error::Message(msg.to_string())
-    }
+  fn custom<T: Display>(msg: T) -> Self {
+    Error::Message(msg.to_string())
+  }
 }
 
 impl de::Error for Error {
-    fn custom<T: Display>(msg: T) -> Self {
-        Error::Message(msg.to_string())
-    }
+  fn custom<T: Display>(msg: T) -> Self {
+    Error::Message(msg.to_string())
+  }
 }
 
 impl Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::Message(msg) => formatter.write_str(msg),
-            Error::Eof => formatter.write_str("unexpected end of input"),
-            Error::TrailingCharacters(end) => formatter.write_str(&format!("Found extra text at end of input: {}", end)),
-            Error::ExpectedType => formatter.write_str("Expected type")
-        }
+  fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    match self {
+      Error::Message(msg) => formatter.write_str(msg),
+      Error::Eof => formatter.write_str("unexpected end of input"),
+      Error::TrailingCharacters(end) => {
+        formatter.write_str(&format!("Found extra text at end of input: {}", end))
+      }
+      Error::ExpectedType => formatter.write_str("Expected type"),
     }
+  }
 }
 
 impl std::error::Error for Error {}
