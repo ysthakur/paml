@@ -29,7 +29,7 @@ pub type ParseResult<T> = Result<T, ParseError>;
 
 pub fn parse(text: String) -> ParseResult<TreeInfo> {
   let tokens = tokenize(&text).map_err(|e| match e {
-    TokenizeError::NoEndingQuote { start_span } => ParseError::UnmatchedStartDelimiter {
+    TokenizeError::NoEndingQuote { open_span: start_span } => ParseError::UnmatchedStartDelimiter {
       expected: "ending quote".to_string(),
       cause_span: start_span,
     },

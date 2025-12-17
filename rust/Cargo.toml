@@ -10,4 +10,9 @@ edition = "2024"
 serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
+insta = { version = "1.44", features = ["yaml"] }
 rstest = "0.26"
+
+[profile.dev.package]
+insta.opt-level = 3
+similar.opt-level = 3

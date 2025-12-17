@@ -1,5 +1,5 @@
 /// The start and offset of a [Tree]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Span {
   pub start: usize,
   pub end: usize,
@@ -28,6 +28,7 @@ pub enum Tree {
   },
 }
 
+#[derive(Debug)]
 pub struct Num {
   pub integer_part: String,
   pub decimal_part: String,

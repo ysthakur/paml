@@ -1,6 +1,6 @@
 mod de;
 mod error;
-pub mod parse;
+// pub mod parse;
 pub mod parse_lossless;
 mod ser;
 pub mod tokenize;

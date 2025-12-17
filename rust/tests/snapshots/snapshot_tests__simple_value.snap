@@ -1,0 +1,18 @@
+---
+source: tests/snapshot_tests.rs
+expression: res
+---
+Token { token_type: BareString, span: Span { start: 0, end: 4 } }
+---
+Before: Ignored { parts: [] }
+Tree: Bool {
+    val: true,
+    span: Span {
+        start: 0,
+        end: 4,
+    },
+}
+After: Ignored { parts: [] }
+Validation errors: [
+]
+---

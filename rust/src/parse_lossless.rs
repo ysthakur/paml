@@ -5,6 +5,7 @@ use crate::{
   tree::{Num, Span},
 };
 
+#[derive(Debug)]
 pub enum ParseTree {
   Bool {
     val: bool,
@@ -52,39 +53,45 @@ impl ParseTree {
   }
 }
 
+#[derive(Debug)]
 pub struct ListItem {
-  item: ParseTree,
-  after_item: Ignored,
+  pub item: ParseTree,
+  pub after_item: Ignored,
   /// The comma after this list item
-  sep: Option<Separator>,
+  pub sep: Option<Separator>,
 }
 
+#[derive(Debug)]
 pub struct MapItem {
-  key: ParseTree,
-  after_key: Ignored,
-  val: ParseTree,
-  after_val: Ignored,
+  pub key: ParseTree,
+  pub after_key: Ignored,
+  pub val: ParseTree,
+  pub after_val: Ignored,
   /// The comma or newline after this map item
-  sep: Option<Separator>,
+  pub sep: Option<Separator>,
 }
 
 /// Span for a comma
+#[derive(Debug)]
 pub struct Separator {
-  sep: Span,
+  pub sep: Span,
   /// The ignored whitespace/comments after the separator
-  after: Ignored,
+  pub after: Ignored,
 }
 
 /// Holds spans for whitespace and comments
+#[derive(Debug)]
 pub struct Ignored {
-  parts: Vec<IgnoredPart>,
+  pub parts: Vec<IgnoredPart>,
 }
 
+#[derive(Debug)]
 pub struct IgnoredPart {
-  span: Span,
-  kind: IgnoredKind,
+  pub span: Span,
+  pub kind: IgnoredKind,
 }
 
+#[derive(Debug)]
 pub enum IgnoredKind {
   HorizontalWhitespace,
   Newline,
@@ -93,6 +100,7 @@ pub enum IgnoredKind {
   MultilineComment,
 }
 
+#[derive(Debug)]
 pub enum ParseError {
   EmptyFile,
   ExpectedValue {
@@ -115,25 +123,43 @@ pub enum ParseError {
   UnexpectedToken {
     span: Span,
   },
+  TokenizeError {
+    err: TokenizeError,
+  },
 }
 
-pub type ParseResult<T> = Result<T, ParseError>;
+pub type Result<T> = std::result::Result<T, ParseError>;
 
-pub fn parse(text: String) -> ParseResult<(Ignored, ParseTree)> {
-  let tokens = tokenize(&text).map_err(|e| match e {
-    TokenizeError::NoEndingQuote { start_span } => ParseError::UnmatchedStartDelimiter {
-      expected: "ending quote".to_string(),
-      cause_span: start_span,
-    },
-  })?;
+#[derive(Debug)]
+pub enum ValidationError {
+  DuplicateKey { key: String, orig_span: Span, dupe_span: Span },
+  UnrecognizedStringFormatType { span: Span },
+}
 
-  let mut parser = Parser { text, tokens: tokens.into_iter().peekable() };
+pub struct LosslessParseResult {
+  pub before: Ignored,
+  pub tree: ParseTree,
+  pub after: Ignored,
+  pub validation_errors: Vec<ValidationError>,
+}
 
-  let start_ignored = parser.parse_ignored()?;
+pub fn parse(text: String) -> Result<LosslessParseResult> {
+  let tokens = tokenize(&text).map_err(|err| ParseError::TokenizeError { err })?;
 
+  let mut parser =
+    Parser { text, tokens: tokens.into_iter().peekable(), validation_errors: Vec::new() };
+
+  let before = parser.parse_ignored()?;
   let expr = parser.parse_expr()?;
+  let after = parser.parse_ignored()?;
+
   match (expr, parser.tokens.peek()) {
-    (Some(expr), None) => Ok((start_ignored, expr)),
+    (Some(expr), None) => Ok(LosslessParseResult {
+      before,
+      tree: expr,
+      after,
+      validation_errors: parser.validation_errors,
+    }),
     (None, None) => Err(ParseError::EmptyFile),
     (_, Some(tok)) => Err(ParseError::UnexpectedToken { span: tok.span.clone() }),
   }
@@ -145,13 +171,14 @@ where
 {
   text: String,
   tokens: Peekable<I>,
+  validation_errors: Vec<ValidationError>,
 }
 
 impl<I> Parser<I>
 where
   I: Iterator<Item = Token>,
 {
-  fn parse_expr(&mut self) -> ParseResult<Option<ParseTree>> {
+  fn parse_expr(&mut self) -> Result<Option<ParseTree>> {
     if let Some(tree) = self.parse_string()? {
       return Ok(Some(tree));
     }
@@ -161,33 +188,11 @@ where
     if let Some(tree) = self.parse_map()? {
       return Ok(Some(tree));
     }
-    if let Some(tree) = self.parse_type_annotated_value()? {
-      return Ok(Some(tree));
-    }
 
     Ok(None)
-    //   match &tok.token_type {
-    //     TokenType::LSquare => return self.parse_list().map(Some),
-    //     TokenType::LBrace => return self.parse_map().map(Some),
-    //     TokenType::Lt => return self.parse_type_annotated_value().map(Some),
-    //     TokenType::BareString => return self.parse_bare_string()?.map(Ok),
-    //     TokenType::QuotedStringType => todo!(),
-    //     TokenType::QuotedString { delimiter } => todo!(),
-    //     TokenType::RSquare | TokenType::RBrace | TokenType::Gt | TokenType::MultilineCommentEnd => {
-    //       let span = tok.span;
-    //       return Err(ParseError::UnmatchedEndDelimiter {
-    //         ending_delimiter: self.get_span_contents(span).to_string(),
-    //         span,
-    //       });
-    //     }
-    //     _ => return Ok(None),
-    //   }
-    // }
-
-    // Ok(None)
   }
 
-  fn parse_string(&mut self) -> ParseResult<Option<ParseTree>> {
+  fn parse_string(&mut self) -> Result<Option<ParseTree>> {
     if let Some((text, span)) = self.parse_quoted_string() {
       Ok(Some(ParseTree::Str { val: text, span }))
     } else if let Some(tok) = self.consume_if(|tok| tok.token_type == TokenType::BareString) {
@@ -199,11 +204,18 @@ where
         }))
       } else {
         // This is just a bare word
-        // todo detect numbers and booleans
-        Ok(Some(ParseTree::Str {
-          val: self.get_span_contents(tok.span).to_string(),
-          span: tok.span,
-        }))
+        let contents = self.get_span_contents(tok.span);
+        if contents == "true" {
+          Ok(Some(ParseTree::Bool { val: true, span: tok.span }))
+        } else if contents == "false" {
+          Ok(Some(ParseTree::Bool { val: false, span: tok.span }))
+        } else {
+          // todo detect numbers
+          Ok(Some(ParseTree::Str {
+            val: self.get_span_contents(tok.span).to_string(),
+            span: tok.span,
+          }))
+        }
       }
     } else {
       Ok(None)
@@ -212,8 +224,8 @@ where
 
   fn parse_quoted_string(&mut self) -> Option<(String, Span)> {
     match self.tokens.peek() {
-      Some(Token { token_type: TokenType::QuotedString { delimiter }, span }) => {
-        let delim_len = delimiter.len();
+      Some(Token { token_type: TokenType::QuotedString { delim_len }, span }) => {
+        let delim_len = *delim_len;
         let span = *span;
         let content = self.get_span_contents(span);
         let text = content[delim_len..content.len() - delim_len].to_string();
@@ -224,7 +236,7 @@ where
     }
   }
 
-  fn parse_list(&mut self) -> ParseResult<Option<ParseTree>> {
+  fn parse_list(&mut self) -> Result<Option<ParseTree>> {
     let Some(start_tok) = self.consume_if(|tok| tok.token_type == TokenType::LSquare) else {
       return Ok(None);
     };
@@ -254,7 +266,7 @@ where
     }
   }
 
-  fn parse_map(&mut self) -> ParseResult<Option<ParseTree>> {
+  fn parse_map(&mut self) -> Result<Option<ParseTree>> {
     let Some(start_tok) = self.consume_if(|tok| tok.token_type == TokenType::LBrace) else {
       return Ok(None);
     };
@@ -288,10 +300,6 @@ where
     }
   }
 
-  fn parse_type_annotated_value(&mut self) -> ParseResult<Option<ParseTree>> {
-    todo!()
-  }
-
   fn expected_value_error(&mut self, msg: &str, cause_span: Span) -> ParseError {
     if let Some(tok) = self.tokens.peek() {
       ParseError::ExpectedValue { msg: msg.to_string(), span: tok.span }
@@ -311,7 +319,7 @@ where
   }
 
   /// Parse a list/map item separator (comma)
-  fn parse_item_sep(&mut self) -> ParseResult<Option<Separator>> {
+  fn parse_item_sep(&mut self) -> Result<Option<Separator>> {
     if let Some(comma) = self.consume_if(|tok| tok.token_type == TokenType::Comma) {
       let after = self.parse_ignored()?;
       Ok(Some(Separator { sep: comma.span, after }))
@@ -325,7 +333,7 @@ where
   /// Parameters:
   /// * `include_newline` - If `false`, stops before consuming a newline token
   ///   (newlines after single-line comments won't be consumed either)
-  fn parse_ignored(&mut self) -> ParseResult<Ignored> {
+  fn parse_ignored(&mut self) -> Result<Ignored> {
     let mut parts = Vec::new();
     loop {
       let num_parts_start = parts.len();
@@ -384,7 +392,7 @@ where
     })
   }
 
-  fn parse_multiline_comment(&mut self) -> ParseResult<Option<IgnoredPart>> {
+  fn parse_multiline_comment(&mut self) -> Result<Option<IgnoredPart>> {
     let Some(start_tok) = self.consume_if(|tok| tok.token_type == TokenType::MultilineCommentStart)
     else {
       return Ok(None);
