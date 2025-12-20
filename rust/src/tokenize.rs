@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, iter::Peekable, str::CharIndices};
 
-use crate::tree::Span;
+use crate::Span;
 
 #[derive(Debug)]
 pub struct Token {
@@ -60,7 +60,7 @@ pub enum TokenizeError {
   },
 }
 
-pub type TokenizeResult<T> = Result<T, TokenizeError>;
+type TokenizeResult<T> = Result<T, TokenizeError>;
 
 pub fn tokenize(text: &str) -> TokenizeResult<Vec<Token>> {
   let mut toks = Vec::new();
@@ -217,11 +217,4 @@ fn string_token(
   Err(TokenizeError::NoEndingQuote {
     open_span: Span { start, end: start + num_quotes * quote_len },
   })
-}
-
-mod test {
-  // #[case]
-  // fn tokenize_happy(#[case] text: &str, #[case] expected: Vec<Token>) {
-
-  // }
 }

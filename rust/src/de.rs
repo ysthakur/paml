@@ -1,5 +1,5 @@
 use serde::de::{self, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor};
-use serde::{forward_to_deserialize_any, Deserialize};
+use serde::{Deserialize, forward_to_deserialize_any};
 
 use crate::error::{Error, Result};
 
@@ -50,11 +50,7 @@ impl<'de> PamlDeserializer<'de> {
     while !self.input.is_empty() {
       let c = self.peek()?;
       if c.is_whitespace() {
-        let ws: String = self
-          .input
-          .chars()
-          .take_while(|c| c.is_whitespace())
-          .collect();
+        let ws: String = self.input.chars().take_while(|c| c.is_whitespace()).collect();
         self.input = &self.input[ws.len()..];
       } else if c == '#' {
       } else {
@@ -109,15 +105,9 @@ impl<'de> PamlDeserializer<'de> {
       }
       _ => {
         // Bare strings (single words)
-        let word: String = self
-          .input
-          .chars()
-          .take_while(|&c| !Self::ends_word(c))
-          .collect();
+        let word: String = self.input.chars().take_while(|&c| !Self::ends_word(c)).collect();
         if word.is_empty() {
-          Err(Error::Message(
-            "Expected a word, got whitespace".to_string(),
-          ))
+          Err(Error::Message("Expected a word, got whitespace".to_string()))
         } else {
           self.input = &self.input[word.len()..];
           Ok(word)
@@ -185,11 +175,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut PamlDeserializer<'de> {
     V: Visitor<'de>,
   {
     let val = self.deserialize_seq(visitor)?;
-    if self.next()? != ']' {
-      Err(Error::Message("Expected ']'".to_string()))
-    } else {
-      Ok(val)
-    }
+    if self.next()? != ']' { Err(Error::Message("Expected ']'".to_string())) } else { Ok(val) }
   }
 
   fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
@@ -197,11 +183,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut PamlDeserializer<'de> {
     V: Visitor<'de>,
   {
     self.trim_ignored()?;
-    if self.next()? != '~' {
-      Err(Error::ExpectedType)
-    } else {
-      visitor.visit_newtype_struct(self)
-    }
+    if self.next()? != '~' { Err(Error::ExpectedType) } else { visitor.visit_newtype_struct(self) }
   }
 
   fn deserialize_enum<V>(
@@ -214,11 +196,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut PamlDeserializer<'de> {
     V: Visitor<'de>,
   {
     self.trim_ignored()?;
-    if self.next()? != '~' {
-      Err(Error::ExpectedType)
-    } else {
-      visitor.visit_enum(self)
-    }
+    if self.next()? != '~' { Err(Error::ExpectedType) } else { visitor.visit_enum(self) }
   }
 
   fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
@@ -322,11 +300,7 @@ impl<'de, 'a> VariantAccess<'de> for &'a mut PamlDeserializer<'de> {
   {
     let val = de::Deserializer::deserialize_seq(&mut *self, visitor)?;
     self.trim_ignored()?;
-    if self.next()? != ']' {
-      Err(Error::Message("Expected ']'".to_string()))
-    } else {
-      Ok(val)
-    }
+    if self.next()? != ']' { Err(Error::Message("Expected ']'".to_string())) } else { Ok(val) }
   }
 
   fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
@@ -365,10 +339,7 @@ mod test {
   #[test]
   fn test_seq() {
     let paml = "{ seq [0 1 2] }";
-    assert_eq!(
-      Struct { seq: vec![0, 1, 2] },
-      super::from_str(paml).unwrap()
-    );
+    assert_eq!(Struct { seq: vec![0, 1, 2] }, super::from_str(paml).unwrap());
   }
 
   #[test]
@@ -386,17 +357,11 @@ mod test {
     assert_eq!(Enum::NewTypeVariant(true), super::from_str(paml).unwrap());
 
     let paml = r#"~TupleVariant ["foo" 45]"#;
-    assert_eq!(
-      Enum::TupleVariant("foo".to_string(), 45),
-      super::from_str(paml).unwrap()
-    );
+    assert_eq!(Enum::TupleVariant("foo".to_string(), 45), super::from_str(paml).unwrap());
 
     let paml = r#"~StructVariant { null null foo bar }"#;
     assert_eq!(
-      Enum::StructVariant {
-        null: (),
-        foo: "bar".to_string()
-      },
+      Enum::StructVariant { null: (), foo: "bar".to_string() },
       super::from_str(paml).unwrap()
     );
   }

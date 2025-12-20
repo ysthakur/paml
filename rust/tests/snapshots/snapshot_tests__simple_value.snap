@@ -4,7 +4,9 @@ expression: res
 ---
 Token { token_type: BareString, span: Span { start: 0, end: 4 } }
 ---
-Before: Ignored { parts: [] }
+Before: Ignored {
+    parts: [],
+}
 Tree: Bool {
     val: true,
     span: Span {
@@ -12,7 +14,19 @@ Tree: Bool {
         end: 4,
     },
 }
-After: Ignored { parts: [] }
+After: Ignored {
+    parts: [],
+}
 Validation errors: [
 ]
 ---
+to_ast result:
+Ok(
+    Bool {
+        val: true,
+        span: Span {
+            start: 0,
+            end: 4,
+        },
+    },
+)

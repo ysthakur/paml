@@ -16,7 +16,9 @@ Token { token_type: HorizontalWhitespace, span: Span { start: 25, end: 26 } }
 Token { token_type: QuotedString { delim_len: 1 }, span: Span { start: 26, end: 31 } }
 Token { token_type: RSquare, span: Span { start: 31, end: 32 } }
 ---
-Before: Ignored { parts: [] }
+Before: Ignored {
+    parts: [],
+}
 Tree: List {
     opener: Span {
         start: 0,
@@ -29,6 +31,7 @@ Tree: List {
         ListItem {
             item: Str {
                 val: "foo",
+                delim_len: 0,
                 span: Span {
                     start: 1,
                     end: 4,
@@ -50,6 +53,7 @@ Tree: List {
         ListItem {
             item: Str {
                 val: "1.2",
+                delim_len: 0,
                 span: Span {
                     start: 5,
                     end: 8,
@@ -113,6 +117,7 @@ Tree: List {
         ListItem {
             item: Str {
                 val: "bar",
+                delim_len: 1,
                 span: Span {
                     start: 20,
                     end: 25,
@@ -134,6 +139,7 @@ Tree: List {
         ListItem {
             item: Str {
                 val: "baz",
+                delim_len: 1,
                 span: Span {
                     start: 26,
                     end: 31,
@@ -149,11 +155,63 @@ Tree: List {
         start: 31,
         end: 32,
     },
-    after_closer: Ignored {
-        parts: [],
-    },
 }
-After: Ignored { parts: [] }
+After: Ignored {
+    parts: [],
+}
 Validation errors: [
 ]
 ---
+to_ast result:
+Ok(
+    List {
+        val: [
+            Str {
+                val: "foo",
+                span: Span {
+                    start: 1,
+                    end: 4,
+                },
+            },
+            Str {
+                val: "1.2",
+                span: Span {
+                    start: 5,
+                    end: 8,
+                },
+            },
+            Bool {
+                val: true,
+                span: Span {
+                    start: 9,
+                    end: 13,
+                },
+            },
+            Bool {
+                val: false,
+                span: Span {
+                    start: 14,
+                    end: 19,
+                },
+            },
+            Str {
+                val: "bar",
+                span: Span {
+                    start: 20,
+                    end: 25,
+                },
+            },
+            Str {
+                val: "baz",
+                span: Span {
+                    start: 26,
+                    end: 31,
+                },
+            },
+        ],
+        span: Span {
+            start: 0,
+            end: 32,
+        },
+    },
+)

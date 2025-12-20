@@ -1,4 +1,4 @@
-use serde::{ser, Serialize};
+use serde::{Serialize, ser};
 
 use crate::error::{Error, Result};
 
@@ -10,9 +10,7 @@ pub fn to_string<T>(value: &T) -> Result<String>
 where
   T: Serialize,
 {
-  let mut serializer = Serializer {
-    output: String::new(),
-  };
+  let mut serializer = Serializer { output: String::new() };
   value.serialize(&mut serializer)?;
   Ok(serializer.output)
 }
@@ -97,11 +95,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
   fn serialize_str(self, v: &str) -> Result<()> {
     self.output += "\"";
-    self.output += &v
-      .replace("\\", "\\\\")
-      .replace("\"", "\\\"")
-      .replace("\n", "\\n")
-      .replace("\r", "\\r");
+    self.output +=
+      &v.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
     self.output += "\"";
     Ok(())
   }
