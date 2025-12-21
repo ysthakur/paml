@@ -1,0 +1,5 @@
+---
+source: tests/serde_snapshot_tests.rs
+expression: "paml::serde::to_string(&val).unwrap()"
+---
+{"unit" null,"bool" false,"int" 123,"double" 123.45,"foo" {},"bar" [123.45,true,],"baz" [{"StructVariant" {"a" 123,}},"UnitVariant",{"TupleVariant" "foo\\\nbar\t\"asdf'k;sdf",},],"foobar" {"foo" "None","bar" {"Some" 123,},},}

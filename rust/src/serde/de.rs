@@ -1,7 +1,7 @@
 use serde::de::{self, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor};
 use serde::{Deserialize, forward_to_deserialize_any};
 
-use crate::error::{Error, Result};
+use crate::serde::error::{Error, Result};
 
 pub struct PamlDeserializer<'de> {
   // This string starts with the input data and characters are truncated off

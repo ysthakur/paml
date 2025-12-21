@@ -1,5 +1,5 @@
 ---
-source: tests/snapshot_tests.rs
+source: tests/parse_snapshot_tests.rs
 expression: res
 ---
 Token { token_type: BareString, span: Span { start: 0, end: 4 } }

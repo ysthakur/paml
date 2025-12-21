@@ -1,6 +1,9 @@
 use serde::{Serialize, ser};
 
-use crate::error::{Error, Result};
+use crate::{
+  Span, Value,
+  serde::{Error, Result},
+};
 
 pub struct Serializer {
   output: String,
@@ -13,13 +16,6 @@ where
   let mut serializer = Serializer { output: String::new() };
   value.serialize(&mut serializer)?;
   Ok(serializer.output)
-}
-
-/// Write the type for the value that follows
-#[must_use]
-fn serialize_type(s: &mut Serializer, typ: &str) -> Result<()> {
-  s.output += &format!("~{} ", typ);
-  Ok(())
 }
 
 impl<'a> ser::Serializer for &'a mut Serializer {
@@ -94,14 +90,13 @@ impl<'a> ser::Serializer for &'a mut Serializer {
   }
 
   fn serialize_str(self, v: &str) -> Result<()> {
-    self.output += "\"";
     self.output +=
-      &v.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
-    self.output += "\"";
+      &crate::print(&Value::Str { val: v.to_string(), span: Span { start: 0, end: 0 } });
     Ok(())
   }
 
   fn serialize_bytes(self, v: &[u8]) -> Result<()> {
+    // TODO support byte strings
     use ser::SerializeSeq;
     let mut s = self.serialize_seq(Some(v.len()))?;
     for b in v {
@@ -134,40 +129,34 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
   fn serialize_unit_variant(
     self,
-    name: &'static str,
+    _name: &'static str,
     _variant_index: u32,
-    _variant: &'static str,
+    variant: &'static str,
   ) -> Result<()> {
-    serialize_type(self, name)?;
-    self.serialize_unit()
+    self.serialize_str(variant)
   }
 
-  fn serialize_newtype_struct<T: ?Sized>(self, name: &'static str, value: &T) -> Result<()>
+  fn serialize_newtype_struct<T: ?Sized>(self, _name: &'static str, value: &T) -> Result<()>
   where
     T: Serialize,
   {
-    use ser::SerializeTupleStruct;
-    serialize_type(self, name)?;
-    let mut s = self.serialize_struct(name, 1)?;
-    s.serialize_field(value)?;
-    s.end()
+    value.serialize(self)
   }
 
   fn serialize_newtype_variant<T: ?Sized>(
     self,
-    name: &'static str,
-    variant_index: u32,
+    _name: &'static str,
+    _variant_index: u32,
     variant: &'static str,
     value: &T,
   ) -> Result<()>
   where
     T: Serialize,
   {
-    use ser::SerializeTupleVariant;
-    serialize_type(self, variant)?;
-    let mut tv = self.serialize_tuple_variant(name, variant_index, variant, 1)?;
-    tv.serialize_field(value)?;
-    tv.end()
+    use serde::ser::SerializeMap;
+    let mut ser_map = self.serialize_map(Some(1))?;
+    ser_map.serialize_entry(variant, value)?;
+    ser_map.end()
   }
 
   fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
@@ -181,10 +170,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
   fn serialize_tuple_struct(
     self,
-    name: &'static str,
+    _name: &'static str,
     len: usize,
   ) -> Result<Self::SerializeTupleStruct> {
-    serialize_type(self, name)?;
     self.serialize_tuple(len)
   }
 
@@ -193,9 +181,12 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     _name: &'static str,
     _variant_index: u32,
     variant: &'static str,
-    len: usize,
+    _len: usize,
   ) -> Result<Self::SerializeTupleVariant> {
-    self.serialize_tuple_struct(variant, len)
+    self.output += "{";
+    self.serialize_str(variant)?;
+    self.output += " [";
+    Ok(self)
   }
 
   fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
@@ -203,8 +194,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     Ok(self)
   }
 
-  fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
-    serialize_type(self, name)?;
+  fn serialize_struct(self, _name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
     self.serialize_map(Some(len))
   }
 
@@ -213,9 +203,12 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     _name: &'static str,
     _variant_index: u32,
     variant: &'static str,
-    len: usize,
+    _len: usize,
   ) -> Result<Self::SerializeStructVariant> {
-    self.serialize_struct(variant, len)
+    self.output += "{";
+    self.serialize_str(variant)?;
+    self.output += " {";
+    Ok(self)
   }
 }
 
@@ -284,7 +277,8 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
   }
 
   fn end(self) -> Result<()> {
-    ser::SerializeSeq::end(self)
+    self.output += "]}";
+    Ok(())
   }
 }
 
@@ -344,6 +338,7 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
   }
 
   fn end(self) -> Result<()> {
-    ser::SerializeMap::end(self)
+    self.output += "}}";
+    Ok(())
   }
 }

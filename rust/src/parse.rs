@@ -1,8 +1,8 @@
 use std::iter::Peekable;
 
 use crate::{
-  Ast, Ignored, IgnoredKind, IgnoredPart, ListItem, MapItem, ParseError, ParseTree, Separator,
-  Span, Token, TokenType, ValidationError, tokenize,
+  Value, Ignored, IgnoredKind, IgnoredPart, ListItem, MapItem, ParseError, ParseTree,
+  QuotedStringType, Separator, Span, Token, TokenType, ValidationError, tokenize,
 };
 
 type Result<T> = std::result::Result<T, ParseError>;
@@ -20,26 +20,27 @@ impl LosslessParseResult {
     self.validation_errors.clone()
   }
 
-  pub fn to_ast(self) -> std::result::Result<Ast, Vec<ValidationError>> {
+  pub fn to_val(self) -> std::result::Result<Value, Vec<ValidationError>> {
     if self.validation_errors.is_empty() {
-      Ok(tree_to_ast(self.tree))
+      Ok(tree_to_val(self.tree))
     } else {
       Err(self.validation_errors)
     }
   }
 }
 
-fn tree_to_ast(tree: ParseTree) -> Ast {
+fn tree_to_val(tree: ParseTree) -> Value {
   match tree {
-    ParseTree::Bool { val, span } => Ast::Bool { val, span },
-    ParseTree::Num { val, span } => Ast::Num { val, span },
-    ParseTree::Str { val, span, delim_len: _ } => Ast::Str { val, span },
-    ParseTree::List { opener, after_opener: _, items, closer } => Ast::List {
-      val: items.into_iter().map(|it| tree_to_ast(it.item)).collect(),
+    ParseTree::Bool { val, span } => Value::Bool { val, span },
+    ParseTree::Num { val, span } => Value::Num { val, span },
+    ParseTree::BareString { val, span } => Value::Str { val, span },
+    ParseTree::QuotedString { val, span, string_type: _, delim_len: _ } => Value::Str { val, span },
+    ParseTree::List { opener, after_opener: _, items, closer } => Value::List {
+      val: items.into_iter().map(|it| tree_to_val(it.item)).collect(),
       span: Span { start: opener.start, end: closer.end },
     },
-    ParseTree::Map { opener, after_opener: _, items, closer } => Ast::List {
-      val: items.into_iter().map(|it| tree_to_ast(it.key)).collect(),
+    ParseTree::Map { opener, after_opener: _, items, closer } => Value::Map {
+      val: items.into_iter().map(|it| (tree_to_val(it.key), tree_to_val(it.val))).collect(),
       span: Span { start: opener.start, end: closer.end },
     },
   }
@@ -96,12 +97,17 @@ where
 
   fn parse_string(&mut self) -> Result<Option<ParseTree>> {
     if let Some((text, delim_len, span)) = self.parse_quoted_string() {
-      Ok(Some(ParseTree::Str { val: text, delim_len, span }))
+      Ok(Some(ParseTree::QuotedString { val: text, string_type: None, delim_len, span }))
     } else if let Some(tok) = self.consume_if(|tok| tok.token_type == TokenType::BareString) {
       if let Some((text, delim_len, str_span)) = self.parse_quoted_string() {
+        let string_type = self.get_span_contents(tok.span);
+        let Some(string_type) = QuotedStringType::from_str(string_type) else {
+          return Err(ParseError::UnrecognizedStringType { span: tok.span });
+        };
         // This is a string with a formatting type
-        Ok(Some(ParseTree::Str {
+        Ok(Some(ParseTree::QuotedString {
           val: text, // TODO change the text according to the format type
+          string_type: Some(string_type),
           delim_len,
           span: Span { start: tok.span.start, end: str_span.end },
         }))
@@ -114,9 +120,8 @@ where
           Ok(Some(ParseTree::Bool { val: false, span: tok.span }))
         } else {
           // todo detect numbers
-          Ok(Some(ParseTree::Str {
+          Ok(Some(ParseTree::BareString {
             val: self.get_span_contents(tok.span).to_string(),
-            delim_len: 0,
             span: tok.span,
           }))
         }

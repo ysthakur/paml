@@ -34,7 +34,7 @@ fn test_parse(#[case] name: &str, #[case] code: &str) {
       res.push_str("---\n");
 
       res.push_str("to_ast result:\n");
-      res.push_str(&format!("{:#?}", parse_res.to_ast()));
+      res.push_str(&format!("{:#?}", parse_res.to_val()));
     }
   }
 
